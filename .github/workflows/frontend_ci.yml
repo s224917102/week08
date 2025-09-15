@@ -1,7 +1,6 @@
 # week08/.github/workflows/frontend_ci.yml
 
-# now build with correct image and trigger frontend ci pipeline
-# make change here to trigger frontend ci
+# change to trigger
 name: Frontend CI - Build & Push Image
 
 on:
