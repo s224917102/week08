@@ -15,20 +15,10 @@ on:
         description: 'Resource Group of the AKS Cluster'
         required: true
         default: 'anushakatuwal-rg'
-      frontend_service_name:
-        description: 'Service name for frontend'
-        required: true
-        default: 'frontend-w08e1'
 
-# provide permission
-permissions:
-  contents: read
-  id-token: write
-
-# to avoid deployment overlapping issue
-concurrency:
-  group: frontend-cd-${{ github.ref }}
-  cancel-in-progress: true
+  # Dynamically generate image tags based on Git SHA and GitHub Run ID
+  # This provides unique, traceable tags for each image build
+  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
 
 jobs:
   deploy_frontend:
@@ -39,17 +29,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate required secret
-        run: |
-          if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
-            echo "::error::Secret AZURE_CREDENTIALS is not set."
-            exit 1
-          fi
-          echo " Required secret is present."
-
       # Azure login using a Service Principal secret
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -58,56 +40,19 @@ jobs:
         run: az acr login --name ${{ secrets.ACR_LOGIN_SERVER }}
 
       - name: Set Kubernetes context (get AKS credentials)
-        run: |
-          set -euo pipefail
-          az aks get-credentials --resource-group "${{ inputs.aks_resource_group }}" --name "${{ inputs.aks_cluster_name }}" --overwrite-existing
-          CURRENT_CONTEXT=$(kubectl config current-context)
-          echo "Current context: $CURRENT_CONTEXT"
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ inputs.aks_resource_group }}
+          cluster-name: ${{ inputs.aks_cluster_name }}
 
       - name: Deploy Frontend to AKS
         run: |
-          set -euo pipefail
-
-          echo "Deploying frontend to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          
+          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
           cd k8s/
-          # Ensure frontend-service.yaml has updated ip
-          kubectl apply -f frontend-configmaps.yaml
 
+          kubectl apply -f frontend-configmaps.yaml
           # Ensure frontend-service.yaml is configured with your ACR
           kubectl apply -f frontend.yaml
-      
-      - name: Wait for Frontend LoadBalancer IPs
-        env:
-          FRONTEND_SERVICE_NAME: ${{ inputs.frontend_service_name }}
-        run: |
-          set -euo pipefail
-          echo "Waiting for Frontend LoadBalancer IPs to be assigned (up to 5 minutes)..."
-          FRONTEND_IP=""
-          
-          for i in $(seq 1 60); do
-            echo "Attempt $i/60 to get IP..."
-            FRONTEND_IP=$(kubectl get service "$FRONTEND_SERVICE_NAME" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-
-            if [[ -n "$FRONTEND_IP" ]]; then
-              echo "Frontend LoadBalancer IPs assigned: $FRONTEND_IP"
-              break
-            fi
-            sleep 5 # Wait 5 seconds before next attempt
-          done
-          
-          if [[ -z "$FRONTEND_IP" ]]; then
-            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IP is not obtained
-          fi
-          
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
-          echo "FRONTEND_IP=$FRONTEND_IP" >> $GITHUB_ENV
-
-      - name: Capture Frontend Service IP for Workflow Output
-        id: get_frontend_ip
-        run: echo "external_ip=${{ env.FRONTEND_IP }}" >> $GITHUB_OUTPUT
 
       - name: Logout from Azure (AKS deployment)
         run: az logout
