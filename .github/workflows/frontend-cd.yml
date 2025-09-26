@@ -20,13 +20,10 @@ on:
         required: true
         default: 'anushakatuwal-rg'
 
-  # Dynamically generate image tags based on Git SHA and GitHub Run ID
-  # This provides unique, traceable tags for each image build
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
-
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     environment: Production
 
     steps:
