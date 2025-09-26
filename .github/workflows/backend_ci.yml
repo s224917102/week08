@@ -3,6 +3,7 @@
 name: Backend CI - Test, Build and Push Images to ACR
 
 # update to trigger
+# again to trigger when pull request
 
 # Trigger the workflow on pushes to the 'main' and 'feature/update-workflow' branch
 
