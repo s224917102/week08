@@ -1,59 +1,111 @@
-# week08/.github/workflows/frontend-cd.yml
+# .github/workflows/frontend-cd.yml
+name: Frontend CD — manual deploy to AKS (protected)
 
-name: CD - Deploy Frontend to AKS
-
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
-  workflow_run:
-    workflows: ["CD - Deploy Backend Services to AKS"]
-    types:
-      - completed
   workflow_dispatch:
     inputs:
-      aks_cluster_name:
-        description: 'Name of the AKS Cluster to deploy to'
-        required: true
-        default: 'anushakatuwal'
       aks_resource_group:
-        description: 'Resource Group of the AKS Cluster'
+        description: 'AKS Resource Group'
         required: true
         default: 'anushakatuwal-rg'
+      aks_cluster_name:
+        description: 'AKS Cluster Name'
+        required: true
+        default: 'anushakatuwal'
+      namespace:
+        description: 'Kubernetes namespace'
+        required: true
+        default: 'anusha'
+      frontend_service_name:
+        description: 'K8s Service name for Frontend (LoadBalancer)'
+        required: true
+        default: 'frontend-service-w08e1'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: frontend-cd-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy_frontend:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    environment: Production
+    environment:
+      name: production
+
+    env:
+      NS: ${{ inputs.namespace }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
-      - name: Azure Login
-        uses: azure/login@v1
+      - name: Validate required secret
+        run: |
+          if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+            echo "::error::Missing required repository secret AZURE_CREDENTIALS"
+            exit 1
+          fi
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.ACR_LOGIN_SERVER }}
-
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
+      - name: Get AKS credentials
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
+          set -euo pipefail
+          az aks get-credentials \
+            --resource-group "${{ inputs.aks_resource_group }}" \
+            --name "${{ inputs.aks_cluster_name }}" \
+            --overwrite-existing
 
-          kubectl apply -f frontend-configmaps.yaml
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+      - name: Ensure namespace & context
+        run: |
+          set -euo pipefail
+          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl config set-context --current --namespace="$NS"
 
-      - name: Logout from Azure (AKS deployment)
+      - name: Apply frontend config & manifests
+        run: |
+          set -euo pipefail
+          kubectl apply -n "$NS" -f k8s/frontend-configmaps.yaml
+          kubectl apply -n "$NS" -f k8s/frontend.yaml
+          kubectl get all -n "$NS"
+
+      - name: Wait for Frontend LB IP
+        id: wait_frontend_ip
+        env:
+          SVC: ${{ inputs.frontend_service_name }}
+        run: |
+          set -euo pipefail
+          FRONTEND_IP=""
+          for i in $(seq 1 60); do
+            FRONTEND_IP=$(kubectl get svc "$SVC" -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -z "$FRONTEND_IP" ]; then
+              FRONTEND_IP=$(kubectl get svc "$SVC" -n "$NS" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            fi
+            echo "Attempt $i: ${FRONTEND_IP:-<pending>}"
+            [ -n "$FRONTEND_IP" ] && break
+            sleep 5
+          done
+          if [ -z "$FRONTEND_IP" ]; then
+            echo "::error::Timed out waiting for frontend LB."
+            kubectl get svc "$SVC" -n "$NS" -o wide || true
+            exit 1
+          fi
+          echo "FRONTEND_IP=$FRONTEND_IP" >> "$GITHUB_ENV"
+
+      - name: Add Deployment Summary
+        run: |
+          {
+            echo "### Frontend deployed"
+            echo ""
+            echo "- **Namespace:** \`${{ env.NS }}\`"
+            echo "- **Frontend URL:** http://${{ env.FRONTEND_IP }}/"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Azure Logout
+        if: always()
         run: az logout

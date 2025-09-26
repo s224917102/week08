@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: frontend-config
+  name: frontend-configmaps
   namespace: shop
 data:
-  PRODUCT_API_URL: "http://product-service-w04e2:8000"
-  ORDER_API_URL: "http://order-service-w04e2:8000"
+  PRODUCT_API_URL: "http://<ip>:8000"
+  ORDER_API_URL: "http://<ip>:8000"
