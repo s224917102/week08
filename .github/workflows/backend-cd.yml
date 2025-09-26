@@ -136,13 +136,3 @@ jobs:
 
       - name: Logout from Azure
         run: az logout
-
-  deploy_frontend:
-    needs: [deploy_backend]
-    uses: ./.github/workflows/frontend-cd.yml
-    with:
-      aks_cluster_name: 'anushakatuwal'
-      aks_resource_group: 'anushakatuwal-rg'
-      product_api_ip: ${{ needs.deploy_backend.outputs.product_api_ip }}
-      order_api_ip: ${{ needs.deploy_backend.outputs.order_api_ip }}
-    secrets: inherit

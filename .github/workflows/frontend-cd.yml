@@ -5,6 +5,10 @@ name: CD - Deploy Frontend to AKS
 # This workflow can be called by other workflows and takes inputs.
 # Or it can be run manually if you provide the IPs.
 on:
+  workflow_run:
+    workflows: ["CD - Deploy Backend Services to AKS"]
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       aks_cluster_name:
