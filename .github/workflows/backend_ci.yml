@@ -113,13 +113,25 @@ jobs:
 
    # Decision to allow to push image only if secrets are present and github reference is main branch
   decide_to_push_image:
-    uses: ./.github/workflows/decide_to_push_image.yml
-    needs: test_and_lint_backends
-    with:
-      branch_ref: ${{ github.ref }}
-    secrets:
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+    runs-on: ubuntu-latest
+    outputs:
+      push_allowed: ${{ steps.result.outputs.push_allowed }}
+    steps:
+      - id: result
+        env:
+          BRANCH_REF: ${{ github.ref }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          allow="false"
+          if [ "$BRANCH_REF" = "refs/heads/main" ] && \
+             [ -n "${AZURE_CREDENTIALS:-}" ] && \
+             [ -n "${ACR_LOGIN_SERVER:-}" ]; then
+            allow="true"
+          fi
+          echo "push_allowed=$allow" >> "$GITHUB_OUTPUT"
+          echo " Allow push: $allow"
 
   # Job 2: Build and Push Docker Images (runs only if tests pass and image_push is true)
   build_and_push_images:
