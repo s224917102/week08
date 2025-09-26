@@ -11,9 +11,7 @@ on:
 
   # Automatically on pushes to main and 'feature/update-workflow' branch
   push:
-    branches:
-      - feature/update-workflow
-      - main
+    branches: [ feature/update-workflow, main ]
     paths: # Only trigger if changes are in backend directories
       - 'backend/**'
       - '.github/workflows/backend_ci.yml' # Trigger if this workflow file changes
@@ -106,7 +104,7 @@ jobs:
         working-directory: backend/${{ matrix.service }}
         env:
           POSTGRES_HOST: localhost
-          POSTGRES_PORT: ${{ matrix.service == 'product_service' && '5432' || '5433' }
+          POSTGRES_PORT: ${{ matrix.service == 'product_service' && '5432' || '5433' }}
           POSTGRES_DB: ${{ matrix.service == 'product_service' && 'products' || 'orders' }}
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
