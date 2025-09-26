@@ -6,15 +6,32 @@ on:
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
-        default: '<aks_cluster_name>'
+        default: 'anushakatuwal'
       aks_resource_group:
         description: 'Resource Group of the AKS Cluster'
         required: true
-        default: '<resource_group_name>'
+        default: 'anushakatuwal-rg'
       aks_acr_name:
         description: 'Name of ACR'
         required: true
-        default: '<acr_name>'
+        default: 'anushakatuwal'
+      product_service_name:
+        description: 'Service name for product'
+        required: true
+        default: 'product-service-w08e1'
+      order_service_name:
+        description: 'Service name for order'
+        required: true
+        default: 'order-service-w08e1'
+
+permissions:
+  contents: read
+  id-token: write
+
+# to avoid deployment overlapping issue
+concurrency:
+  group: backend-cd-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy_backend:
@@ -28,23 +45,37 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Log in to Azure
-        uses: azure/login@v1
+      
+      - name: Validate required secret
+        run: |
+            if [ -z "${{ secrets.AZURE_CREDENTIALS }}" ]; then
+              echo "::error::Missing required repository secret AZURE_CREDENTIALS"
+              exit 1
+            fi
+            echo "Required secret AZURE_CREDENTIALS is present."
+     
+      - name: Log in to Azure (OIDC)
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: true
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          set -euo pipefail
+          az aks get-credentials --resource-group "${{ inputs.aks_resource_group }}" --name "${{ inputs.aks_cluster_name }}" --overwrite-existing
+          
+          CURRENT_CONTEXT=$(kubectl config current-context)
+          echo "Current context: $CURRENT_CONTEXT"
 
       - name: Attach ACR
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+          set -euo pipefail
+          az aks update --name "${{ inputs.aks_cluster_name }}" --resource-group "${{ inputs.aks_resource_group }}" --attach-acr "${{ inputs.aks_acr_name }}"
 
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
+          set -euo pipefail
           echo "Deploying backend infrastructure..."
           cd k8s/
           kubectl apply -f configmaps.yaml
@@ -54,21 +85,26 @@ jobs:
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
+          set -euo pipefail
           echo "Deploying backend microservices..."
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
       
       - name: Wait for Backend LoadBalancer IPs
+        env:
+          PRODUCT_SERVICE_NAME:  ${{ inputs.product_service_name }}
+          ORDER_SERVICE_NAME: ${{ inputs.order_service_name }}
         run: |
+          set -euo pipefail
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
           PRODUCT_IP=""
           ORDER_IP=""
           
           for i in $(seq 1 60); do
             echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PRODUCT_IP=$(kubectl get service "$PRODUCT_SERVICE_NAME" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ORDER_IP=$(kubectl get service "$ORDER_SERVICE_NAME" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
               echo "All backend LoadBalancer IPs assigned!"

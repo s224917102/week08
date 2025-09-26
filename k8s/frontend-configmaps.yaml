@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-configmaps
+data:
+  PRODUCT_API_URL: "http://4.198.125.13:8000" # External IP of Product Service
+  ORDER_API_URL: "http://4.198.132.20:8001" # External IP of Order Service

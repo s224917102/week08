@@ -21,7 +21,10 @@ spec:
         image: anushakatuwal.azurecr.io/frontend:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 80
+          - containerPort: 80
+        envFrom:
+            - configMapRef:
+                name: frontend-configmaps
 ---
 apiVersion: v1
 kind: Service
