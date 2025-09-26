@@ -14,7 +14,7 @@ on:
       aks_acr_name:
         description: 'Name of ACR'
         required: true
-        default: 'anushakatuwal'
+        default: 'anushakatuwalacr'
       product_service_name:
         description: 'Service name for product'
         required: true
@@ -36,6 +36,7 @@ concurrency:
 jobs:
   deploy_backend:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     environment: Production
     
     outputs:
