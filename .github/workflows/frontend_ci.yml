@@ -1,7 +1,6 @@
 # week08/.github/workflows/frontend_ci.yml
 
 # also trigger frontend
-# change to trigger
 
 # Trigger the workflow on pushes to the 'main' and 'feature/update-workflow' branch
 name: Frontend CI - Build & Push Image
