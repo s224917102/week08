@@ -42,13 +42,27 @@ env:
 
 jobs:  
   # Decision to allow to push image only if secrets are present and github reference is main branch
+   # Decision to allow to push image only if secrets are present and github reference is main branch
   decide_to_push_image:
-    uses: ./.github/workflows/decide_to_push_image.yml
-    with:
-      branch_ref: ${{ github.ref }}
-    secrets:
-      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+    runs-on: ubuntu-latest
+    outputs:
+      push_allowed: ${{ steps.result.outputs.push_allowed }}
+    steps:
+      - id: result
+        env:
+          BRANCH_REF: ${{ github.ref }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+        run: |
+          set -euo pipefail
+          allow="false"
+          if [ "$BRANCH_REF" = "refs/heads/main" ] && \
+             [ -n "${AZURE_CREDENTIALS:-}" ] && \
+             [ -n "${ACR_LOGIN_SERVER:-}" ]; then
+            allow="true"
+          fi
+          echo "push_allowed=$allow" >> "$GITHUB_OUTPUT"
+          echo " Allow push: $allow"
   
   build_and_push_frontend:
     runs-on: ubuntu-latest
